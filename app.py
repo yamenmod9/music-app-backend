@@ -720,6 +720,38 @@ TEST_PAGE_HTML = '''
             },
             {
                 group: 'Music Sources',
+                name: 'Get Artist Albums',
+                run: async () => {
+                    const artistId = ensureValue(musicProbe.artistId, 'Artist ID not available from Search Tracks');
+                    const r = await api('GET', `/music/artist/${artistId}/albums`);
+                    if (!r.ok) throw new Error(getErrorMessage(r, 'Get artist albums failed'));
+                    const albums = Array.isArray(r.data.data) ? r.data.data : [];
+                    return { count: albums.length };
+                }
+            },
+            {
+                group: 'Music Sources',
+                name: 'Get Album Tracks',
+                run: async () => {
+                    const albumId = ensureValue(musicProbe.albumId, 'Album ID not available from Search Tracks');
+                    const r = await api('GET', `/music/album/${albumId}/tracks`);
+                    if (!r.ok) throw new Error(getErrorMessage(r, 'Get album tracks failed'));
+                    const tracks = Array.isArray(r.data.data) ? r.data.data : [];
+                    return { count: tracks.length };
+                }
+            },
+            {
+                group: 'Music Sources',
+                name: 'Get New Releases',
+                run: async () => {
+                    const r = await api('GET', '/music/new-releases');
+                    if (!r.ok) throw new Error(getErrorMessage(r, 'Get new releases failed'));
+                    const releases = Array.isArray(r.data.data) ? r.data.data : [];
+                    return { count: releases.length };
+                }
+            },
+            {
+                group: 'Music Sources',
                 name: 'Lookup MusicBrainz MBID',
                 run: async () => {
                     const artistName = ensureValue(musicProbe.artistName, 'Artist name not available from Search Tracks');

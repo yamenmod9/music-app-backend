@@ -280,6 +280,21 @@ def get_album(album_id: int):
     return jsonify(album_data), 200
 
 
+@music_sources_bp.route('/album/<int:album_id>/tracks', methods=['GET'])
+@jwt_required()
+def get_album_tracks(album_id: int):
+    payload, err = _cached_json_request(
+        namespace='deezer:album:tracks',
+        url=f'{DEEZER_BASE_URL}/album/{album_id}/tracks',
+    )
+    if err:
+        return err
+
+    tracks = payload.get('data') if isinstance(payload, dict) else []
+    transformed = [_extract_deezer_track(item) for item in tracks]
+    return jsonify({'data': transformed}), 200
+
+
 @music_sources_bp.route('/artist/<int:artist_id>', methods=['GET'])
 @jwt_required()
 def get_artist(artist_id: int):
@@ -308,6 +323,22 @@ def get_artist_top_tracks(artist_id: int):
     return jsonify({'data': [_extract_deezer_track(item) for item in tracks]}), 200
 
 
+@music_sources_bp.route('/artist/<int:artist_id>/albums', methods=['GET'])
+@jwt_required()
+def get_artist_albums(artist_id: int):
+    payload, err = _cached_json_request(
+        namespace='deezer:artist:albums',
+        url=f'{DEEZER_BASE_URL}/artist/{artist_id}/albums',
+        params={'limit': 24},
+    )
+    if err:
+        return err
+
+    albums = payload.get('data') if isinstance(payload, dict) else []
+    transformed = [_extract_deezer_album(item) for item in albums]
+    return jsonify({'data': transformed}), 200
+
+
 @music_sources_bp.route('/charts', methods=['GET'])
 @jwt_required()
 def get_charts():
@@ -320,6 +351,21 @@ def get_charts():
 
     tracks = payload.get('data') if isinstance(payload, dict) else []
     transformed = [_extract_deezer_track(item) for item in tracks[:10]]
+    return jsonify({'data': transformed}), 200
+
+
+@music_sources_bp.route('/new-releases', methods=['GET'])
+@jwt_required()
+def get_new_releases():
+    payload, err = _cached_json_request(
+        namespace='deezer:new-releases',
+        url=f'{DEEZER_BASE_URL}/editorial/0/releases',
+    )
+    if err:
+        return err
+
+    releases = payload.get('data') if isinstance(payload, dict) else []
+    transformed = [_extract_deezer_album(item) for item in releases]
     return jsonify({'data': transformed}), 200
 
 
