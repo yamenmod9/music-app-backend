@@ -27,6 +27,25 @@ LYRICS_BASE_URL = 'https://api.lyrics.ovh'
 MUSICBRAINZ_BASE_URL = 'https://musicbrainz.org/ws/2'
 COVER_ART_BASE_URL = 'https://coverartarchive.org'
 
+REGION_SEARCH_TERMS = {
+    'US': 'top hits usa',
+    'GB': 'uk top hits',
+    'EG': 'arabic hits egypt',
+    'SA': 'saudi arabia hits',
+    'AE': 'arabic hits uae',
+    'IN': 'bollywood top hits',
+    'PK': 'pakistan top hits',
+    'TR': 'turkish top hits',
+    'FR': 'french top hits',
+    'DE': 'german top hits',
+    'ES': 'spanish top hits',
+    'IT': 'italian top hits',
+    'BR': 'brazil top hits',
+    'MX': 'mexico top hits',
+    'JP': 'j-pop top hits',
+    'KR': 'k-pop top hits',
+}
+
 
 def _error(message: str, code: int):
     return jsonify({'error': message, 'code': code}), code
@@ -184,6 +203,14 @@ def _normalize_lyrics(text: str) -> str:
     normalized = text.replace('\r\n', '\n').replace('\r', '\n').strip()
     normalized = re.sub(r'\n{3,}', '\n\n', normalized)
     return normalized.strip()
+
+
+def _region_query(country_code: str) -> str:
+    normalized = (country_code or 'US').strip().upper()
+    if len(normalized) != 2:
+        normalized = 'US'
+
+    return REGION_SEARCH_TERMS.get(normalized, f'top hits {normalized}')
 
 
 def _closest_lyrics_candidate(title: str, artist: str, candidates: list[dict]):
@@ -354,6 +381,31 @@ def get_charts():
     return jsonify({'data': transformed}), 200
 
 
+@music_sources_bp.route('/region/<string:country_code>/quick-picks', methods=['GET'])
+@jwt_required()
+def get_region_quick_picks(country_code: str):
+    query = _region_query(country_code)
+    payload, err = _cached_json_request(
+        namespace='deezer:region:quick-picks',
+        url=f'{DEEZER_BASE_URL}/search/track',
+        params={'q': query, 'limit': 12},
+    )
+
+    if err:
+        fallback_payload, fallback_err = _cached_json_request(
+            namespace='deezer:region:quick-picks:fallback',
+            url=f'{DEEZER_BASE_URL}/search/track',
+            params={'q': 'top hits', 'limit': 12},
+        )
+        if fallback_err:
+            return err
+        payload = fallback_payload
+
+    tracks = payload.get('data') if isinstance(payload, dict) else []
+    transformed = [_extract_deezer_track(item) for item in tracks[:12]]
+    return jsonify({'country_code': country_code.upper(), 'data': transformed}), 200
+
+
 @music_sources_bp.route('/new-releases', methods=['GET'])
 @jwt_required()
 def get_new_releases():
@@ -374,7 +426,17 @@ def get_new_releases():
 def get_artist_info(artist_name: str):
     api_key = current_app.config.get('LASTFM_API_KEY')
     if not api_key:
-        return _error('LASTFM_API_KEY is not configured', 500)
+        return jsonify(
+            {
+                'name': artist_name,
+                'bio_summary': '',
+                'listeners': '0',
+                'playcount': '0',
+                'tags': [],
+                'image': None,
+                'source': 'fallback-no-lastfm',
+            }
+        ), 200
 
     payload, err = _cached_json_request(
         namespace='lastfm:artist:info',
@@ -412,7 +474,7 @@ def get_artist_info(artist_name: str):
 def get_similar_artists(artist_name: str):
     api_key = current_app.config.get('LASTFM_API_KEY')
     if not api_key:
-        return _error('LASTFM_API_KEY is not configured', 500)
+        return jsonify({'data': [], 'source': 'fallback-no-lastfm'}), 200
 
     payload, err = _cached_json_request(
         namespace='lastfm:artist:similar',

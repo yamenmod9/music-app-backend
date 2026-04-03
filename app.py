@@ -720,6 +720,19 @@ TEST_PAGE_HTML = '''
             },
             {
                 group: 'Music Sources',
+                name: 'Get Regional Quick Picks',
+                run: async () => {
+                    const locale = (navigator.language || 'en-US').toUpperCase();
+                    const parts = locale.split('-');
+                    const country = parts.length > 1 ? parts[parts.length - 1] : 'US';
+                    const r = await api('GET', `/music/region/${encodeSegment(country)}/quick-picks`);
+                    if (!r.ok) throw new Error(getErrorMessage(r, 'Get regional quick picks failed'));
+                    const tracks = Array.isArray(r.data.data) ? r.data.data : [];
+                    return { country, count: tracks.length };
+                }
+            },
+            {
+                group: 'Music Sources',
                 name: 'Get Artist Albums',
                 run: async () => {
                     const artistId = ensureValue(musicProbe.artistId, 'Artist ID not available from Search Tracks');
