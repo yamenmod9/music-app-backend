@@ -206,6 +206,20 @@ def _normalize_lyrics(text: str) -> str:
     return normalized.strip()
 
 
+def _parse_count(value) -> int:
+    if value is None:
+        return 0
+
+    cleaned = re.sub(r'[^0-9]', '', str(value))
+    if not cleaned:
+        return 0
+
+    try:
+        return int(cleaned)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _region_query(country_code: str) -> str:
     normalized = (country_code or 'US').strip().upper()
     if len(normalized) != 2:
@@ -425,16 +439,35 @@ def get_new_releases():
 @music_sources_bp.route('/artist/<string:artist_name>/info', methods=['GET'])
 @jwt_required()
 def get_artist_info(artist_name: str):
+    def _resolve_deezer_fallback():
+        payload, err = _cached_json_request(
+            namespace='deezer:artist:fallback',
+            url=f'{DEEZER_BASE_URL}/search/artist',
+            params={'q': artist_name, 'limit': 1},
+        )
+        if err or not isinstance(payload, dict):
+            return 0, None
+
+        artists = payload.get('data') or []
+        if not artists:
+            return 0, None
+
+        first = artists[0] or {}
+        fans = _parse_count(first.get('nb_fan'))
+        image = first.get('picture_xl') or first.get('picture_big') or first.get('picture_medium')
+        return fans, image
+
     api_key = current_app.config.get('LASTFM_API_KEY')
     if not api_key:
+        fallback_listeners, fallback_image = _resolve_deezer_fallback()
         return jsonify(
             {
                 'name': artist_name,
                 'bio_summary': '',
-                'listeners': 0,
-                'playcount': 0,
+                'listeners': fallback_listeners,
+                'playcount': fallback_listeners,
                 'tags': [],
-                'image': None,
+                'image': fallback_image,
                 'source': 'fallback-no-lastfm',
             }
         ), 200
@@ -457,18 +490,27 @@ def get_artist_info(artist_name: str):
     extralarge = next((img.get('#text') for img in image_list if img.get('size') == 'extralarge' and img.get('#text')), None)
 
     tags = [item.get('name') for item in ((artist.get('tags') or {}).get('tag') or []) if item.get('name')]
-    raw_listeners = ((artist.get('stats') or {}).get('listeners') or 0)
-    try:
-        listeners = int(str(raw_listeners).replace(',', ''))
-    except ValueError:
-        listeners = 0
+    stats = artist.get('stats') or {}
+    listeners = _parse_count(stats.get('listeners'))
+    playcount = _parse_count(stats.get('playcount'))
+
+    fallback_listeners = 0
+    fallback_image = None
+    if listeners == 0 or playcount == 0 or extralarge is None:
+        fallback_listeners, fallback_image = _resolve_deezer_fallback()
+
+    if listeners == 0:
+        listeners = fallback_listeners
+    if playcount == 0:
+        playcount = listeners if listeners > 0 else fallback_listeners
+    if extralarge is None:
+        extralarge = fallback_image
 
     response = {
         'name': artist.get('name') or artist_name,
         'bio_summary': _strip_html(((artist.get('bio') or {}).get('summary') or '')),
         'listeners': listeners,
-        # Keep this field for backward compatibility with existing clients.
-        'playcount': listeners,
+        'playcount': playcount,
         'tags': tags,
         'image': extralarge,
     }
