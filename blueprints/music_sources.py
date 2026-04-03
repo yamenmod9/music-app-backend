@@ -193,6 +193,7 @@ def _strip_html(raw_text: str) -> str:
     if not raw_text:
         return ''
     no_tags = re.sub(r'<[^>]+>', '', raw_text)
+    no_tags = re.sub(r'Read more on Last\.fm.*', '', no_tags, flags=re.IGNORECASE)
     return html.unescape(no_tags).strip()
 
 
@@ -430,8 +431,8 @@ def get_artist_info(artist_name: str):
             {
                 'name': artist_name,
                 'bio_summary': '',
-                'listeners': '0',
-                'playcount': '0',
+                'listeners': 0,
+                'playcount': 0,
                 'tags': [],
                 'image': None,
                 'source': 'fallback-no-lastfm',
@@ -456,12 +457,18 @@ def get_artist_info(artist_name: str):
     extralarge = next((img.get('#text') for img in image_list if img.get('size') == 'extralarge' and img.get('#text')), None)
 
     tags = [item.get('name') for item in ((artist.get('tags') or {}).get('tag') or []) if item.get('name')]
+    raw_listeners = ((artist.get('stats') or {}).get('listeners') or 0)
+    try:
+        listeners = int(str(raw_listeners).replace(',', ''))
+    except ValueError:
+        listeners = 0
 
     response = {
         'name': artist.get('name') or artist_name,
         'bio_summary': _strip_html(((artist.get('bio') or {}).get('summary') or '')),
-        'listeners': ((artist.get('stats') or {}).get('listeners') or '0'),
-        'playcount': ((artist.get('stats') or {}).get('playcount') or '0'),
+        'listeners': listeners,
+        # Keep this field for backward compatibility with existing clients.
+        'playcount': listeners,
         'tags': tags,
         'image': extralarge,
     }
@@ -649,7 +656,11 @@ def get_lyrics():
     if not artist or not title:
         return _error('Query parameters artist and title are required', 400)
 
-    direct_url = f"{LYRICS_BASE_URL}/v1/{quote(artist)}/{quote(title)}"
+    title_clean = re.sub(r'\s*(feat\.?|ft\.?|featuring).*', '', title, flags=re.IGNORECASE).strip()
+
+    artist_enc = quote(artist, safe='')
+    title_enc = quote(title_clean, safe='')
+    direct_url = f"{LYRICS_BASE_URL}/v1/{artist_enc}/{title_enc}"
 
     direct_response, err = _safe_get(
         direct_url,
@@ -668,7 +679,7 @@ def get_lyrics():
     if direct_response.status_code != 404:
         return _error(f'Lyrics API returned status {direct_response.status_code}', direct_response.status_code)
 
-    suggest_url = f"{LYRICS_BASE_URL}/suggest/{quote(title)}"
+    suggest_url = f"{LYRICS_BASE_URL}/suggest/{title_enc}"
     suggest_response, err = _safe_get(
         suggest_url,
         timeout=_timeout(),
@@ -677,49 +688,46 @@ def get_lyrics():
     if err:
         return err
 
-    if suggest_response.status_code >= 400:
-        return _error('Lyrics not found', 404)
+    if suggest_response.status_code == 200:
+        try:
+            suggest_payload = suggest_response.json()
+        except ValueError:
+            suggest_payload = {}
 
-    try:
-        suggest_payload = suggest_response.json()
-    except ValueError:
-        return _error('Failed to parse lyrics suggest response', 502)
+        candidates = suggest_payload.get('data') or []
+        if candidates:
+            first = candidates[0]
+            fb_artist = quote(((first.get('artist') or {}).get('name') or '').strip(), safe='')
+            fb_title = quote((first.get('title') or '').strip(), safe='')
 
-    candidates = suggest_payload.get('data') or []
-    best_candidate = _closest_lyrics_candidate(title, artist, candidates)
+            if fb_artist and fb_title:
+                fallback_url = f"{LYRICS_BASE_URL}/v1/{fb_artist}/{fb_title}"
+                fallback_response, err = _safe_get(
+                    fallback_url,
+                    timeout=_timeout(),
+                    failure_message='Lyrics fallback request failed',
+                )
+                if err:
+                    return err
 
-    if not best_candidate:
-        return _error('Lyrics not found', 404)
+                if fallback_response.status_code == 200:
+                    try:
+                        fallback_payload = fallback_response.json()
+                    except ValueError:
+                        fallback_payload = {}
 
-    candidate_title = (best_candidate.get('title') or '').strip()
-    candidate_artist = ((best_candidate.get('artist') or {}).get('name') or '').strip()
+                    lyrics = _normalize_lyrics(fallback_payload.get('lyrics') or '')
+                    if lyrics:
+                        return jsonify({'lyrics': lyrics, 'source': 'lyrics.ovh'}), 200
 
-    if not candidate_title or not candidate_artist:
-        return _error('Lyrics not found', 404)
-
-    fallback_url = f"{LYRICS_BASE_URL}/v1/{quote(candidate_artist)}/{quote(candidate_title)}"
-
-    fallback_response, err = _safe_get(
-        fallback_url,
-        timeout=_timeout(),
-        failure_message='Lyrics fallback request failed',
-    )
-    if err:
-        return err
-
-    if fallback_response.status_code >= 400:
-        return _error('Lyrics not found', 404)
-
-    try:
-        fallback_payload = fallback_response.json()
-    except ValueError:
-        return _error('Failed to parse lyrics response', 502)
-
-    lyrics = _normalize_lyrics(fallback_payload.get('lyrics') or '')
-    if not lyrics:
-        return _error('Lyrics not found', 404)
-
-    return jsonify({'lyrics': lyrics, 'source': 'lyrics.ovh'}), 200
+    genius_query = quote(f'{artist} {title_clean}', safe='')
+    return jsonify(
+        {
+            'lyrics': None,
+            'genius_url': f'https://genius.com/search?q={genius_query}',
+            'source': 'not_found',
+        }
+    ), 404
 
 
 @music_sources_bp.route('/mbid', methods=['GET'])
