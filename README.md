@@ -111,6 +111,7 @@ Visit `/test` in your browser to access the built-in test page that runs all API
 | `SECRET_KEY` | Flask secret key | (required) |
 | `JWT_SECRET_KEY` | JWT signing key | (required) |
 | `LASTFM_API_KEY` | Last.fm API key for artist metadata | (required for music enrichment) |
+| `LASTFM_SHARED_SECRET` | Last.fm shared secret (for signed Last.fm methods) | optional |
 | `MUSICBRAINZ_USER_AGENT` | MusicBrainz user-agent header | `MusicPlayerApp/1.0 (your@email.com)` |
 | `API_CACHE_TTL` | In-memory API cache TTL (seconds) | `3600` |
 | `DATABASE_URL` | Database connection URL | `sqlite:///music_player.db` |

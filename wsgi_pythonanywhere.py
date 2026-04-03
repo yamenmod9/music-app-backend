@@ -14,5 +14,6 @@ if project_home not in sys.path:
 os.environ['SECRET_KEY'] = 'change-this-to-a-secure-secret-key'
 os.environ['JWT_SECRET_KEY'] = 'change-this-to-a-secure-jwt-key'
 os.environ['LASTFM_API_KEY'] = 'set-your-lastfm-api-key'
+os.environ['LASTFM_SHARED_SECRET'] = 'set-your-lastfm-shared-secret'
 
 from app import app as application

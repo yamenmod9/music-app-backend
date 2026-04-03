@@ -19,6 +19,7 @@ class Config:
 
     # Music sources integrations
     LASTFM_API_KEY = os.environ.get('LASTFM_API_KEY')
+    LASTFM_SHARED_SECRET = os.environ.get('LASTFM_SHARED_SECRET')
     MUSICBRAINZ_USER_AGENT = os.environ.get(
         'MUSICBRAINZ_USER_AGENT',
         'MusicPlayerApp/1.0 (your@email.com)'
